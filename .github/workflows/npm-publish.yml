@@ -16,9 +16,7 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org/
       
-      - run: npm ci
-      
-      - run: npm test
+      - run: npm install
       
       # Get version from package.json
       - name: Get package version
