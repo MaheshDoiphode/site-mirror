@@ -5,11 +5,11 @@
  */
 import { execSync } from 'node:child_process';
 
-console.log('[webmirror] Checking Playwright browsers...');
+console.log('[site-mirror] Checking Playwright browsers...');
 
 try {
   execSync('npx playwright install chromium', { stdio: 'inherit' });
-  console.log('[webmirror] Chromium browser ready.');
+  console.log('[site-mirror] Chromium browser ready.');
 } catch (err) {
-  console.warn('[webmirror] Could not auto-install Chromium. Run manually: npx playwright install chromium');
+  console.warn('[site-mirror] Could not auto-install Chromium. Run manually: npx playwright install chromium');
 }

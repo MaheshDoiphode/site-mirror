@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * webmirror CLI
+ * site-mirror CLI
  *
  * Usage:
- *   webmirror init                  Interactive setup - creates webmirror.config.json
- *   webmirror run [options]         Run the mirror (reads config + CLI overrides)
- *   webmirror serve [port]          Serve the offline folder locally
+ *   site-mirror init                  Interactive setup - creates site-mirror.config.json
+ *   site-mirror run [options]         Run the mirror (reads config + CLI overrides)
+ *   site-mirror serve [port]          Serve the offline folder locally
  *
  * Options (for run):
  *   --start <url>         Start URL (required if not in config)
@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { execSync, spawn } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CONFIG_FILE = 'webmirror.config.json';
+const CONFIG_FILE = 'site-mirror.config.json';
 
 const defaultConfig = {
   start: '',
@@ -106,7 +106,7 @@ async function cmdInit(cwd) {
   }
 
   console.log('');
-  console.log('Welcome to webmirror! Let\'s set up your config.');
+  console.log('Welcome to site-mirror! Let\'s set up your config.');
   console.log('Press Enter to accept the default value shown in parentheses.');
   console.log('');
 
@@ -150,7 +150,7 @@ async function cmdInit(cwd) {
     console.log('');
     console.log(`Created ${CONFIG_FILE}`);
     console.log('');
-    console.log('Run "webmirror run" to start mirroring!');
+    console.log('Run "site-mirror run" to start mirroring!');
   } finally {
     rl.close();
   }
@@ -166,10 +166,10 @@ async function cmdRun(cwd, cliArgs) {
     console.error('Error: No start URL specified.');
     console.error('');
     console.error('You can either:');
-    console.error('  1. Run "webmirror init" to create a config file');
+    console.error('  1. Run "site-mirror init" to create a config file');
     console.error('  2. Pass --start <url> directly, e.g.:');
-    console.error('     webmirror run --start https://example.com/');
-    console.error('     webmirror run --start https://example.com/page --singlePage');
+    console.error('     site-mirror run --start https://example.com/');
+    console.error('     site-mirror run --start https://example.com/page --singlePage');
     console.error('');
     process.exit(1);
   }
@@ -222,7 +222,7 @@ async function cmdServe(cwd, port) {
 
   if (!exists) {
     console.error(`No offline folder found at ${outDir}`);
-    console.error('Run "webmirror run" first to download the site.');
+    console.error('Run "site-mirror run" first to download the site.');
     process.exit(1);
   }
 
@@ -241,12 +241,12 @@ async function main() {
 
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     console.log(`
-webmirror - Mirror websites for offline browsing
+site-mirror - Mirror websites for offline browsing
 
 Usage:
-  webmirror init               Interactive setup - creates webmirror.config.json
-  webmirror run [options]      Mirror the website (reads config + CLI overrides)
-  webmirror serve [port]       Serve the offline folder (default port: 8080)
+  site-mirror init               Interactive setup - creates site-mirror.config.json
+  site-mirror run [options]      Mirror the website (reads config + CLI overrides)
+  site-mirror serve [port]       Serve the offline folder (default port: 8080)
 
 Run options:
   --start <url>         Start URL (required if not in config)
@@ -257,10 +257,10 @@ Run options:
   --singlePage          Download only this page + all its assets (no crawling)
 
 Examples:
-  webmirror run --start https://example.com/page --singlePage
-  webmirror init
-  webmirror run
-  webmirror serve 3000
+  site-mirror run --start https://example.com/page --singlePage
+  site-mirror init
+  site-mirror run
+  site-mirror serve 3000
 `);
     return;
   }

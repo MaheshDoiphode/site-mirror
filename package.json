@@ -1,10 +1,10 @@
 {
-  "name": "webmirror",
-  "version": "1.0.0",
+  "name": "site-mirror",
+  "version": "1.0.1",
   "description": "CLI tool to mirror websites for offline browsing using Playwright",
   "type": "module",
   "bin": {
-    "webmirror": "./bin/cli.mjs"
+    "site-mirror": "bin/cli.mjs"
   },
   "scripts": {
     "postinstall": "node ./bin/postinstall.mjs"
@@ -12,7 +12,8 @@
   "files": [
     "bin/",
     "lib/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "keywords": [
     "mirror",
@@ -20,11 +21,26 @@
     "website",
     "crawler",
     "playwright",
-    "scraper"
+    "scraper",
+    "web-scraping",
+    "archiver",
+    "static-site"
   ],
+  "author": "Mahesh Doiphode",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MaheshDoiphode/site-mirror.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MaheshDoiphode/site-mirror/issues"
+  },
+  "homepage": "https://github.com/MaheshDoiphode/site-mirror#readme",
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",
     "playwright": "^1.49.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

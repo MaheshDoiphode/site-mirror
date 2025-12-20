@@ -1,4 +1,4 @@
-# webmirror
+# site-mirror
 
 A CLI tool to mirror websites for offline browsing using Playwright.
 
@@ -6,35 +6,35 @@ A CLI tool to mirror websites for offline browsing using Playwright.
 
 ```bash
 # Install globally
-npm install -g webmirror
+npm install -g site-mirror
 
 # Or use directly via npx
-npx webmirror --help
+npx site-mirror --help
 ```
 
 ## Quick Start
 
 ```bash
 # Download a single page with all its assets (no config needed!)
-webmirror run --start https://www.apple.com/iphone/ --singlePage
+site-mirror run --start https://www.apple.com/iphone/ --singlePage
 
 # Crawl an entire site
-webmirror run --start https://example.com/
+site-mirror run --start https://example.com/
 
 # Or use interactive config-based workflow:
-webmirror init          # Interactive prompts to create webmirror.config.json
-webmirror run           # Runs the mirror using config
-webmirror serve         # Serve locally on port 8080
+site-mirror init          # Interactive prompts to create site-mirror.config.json
+site-mirror run           # Runs the mirror using config
+site-mirror serve         # Serve locally on port 8080
 ```
 
 ## Commands
 
-| Command               | Description                                           |
-| --------------------- | ----------------------------------------------------- |
-| `webmirror init`      | Interactive setup - creates `webmirror.config.json`   |
-| `webmirror run`       | Run the mirror (reads config + CLI overrides)         |
-| `webmirror serve`     | Serve the `./offline` folder locally                  |
-| `webmirror serve 3000`| Serve on a custom port                                |
+| Command                  | Description                                           |
+| ------------------------ | ----------------------------------------------------- |
+| `site-mirror init`       | Interactive setup - creates `site-mirror.config.json` |
+| `site-mirror run`        | Run the mirror (reads config + CLI overrides)         |
+| `site-mirror serve`      | Serve the `./offline` folder locally                  |
+| `site-mirror serve 3000` | Serve on a custom port                                |
 
 ## CLI Options (for `run`)
 
@@ -48,9 +48,9 @@ webmirror serve         # Serve locally on port 8080
 | `--seedSitemaps`    | Seed URLs from sitemap.xml/robots.txt    | `false`         |
 | `--singlePage`      | Download only this page + all its assets | `false`         |
 
-## Config File (`webmirror.config.json`)
+## Config File (`site-mirror.config.json`)
 
-Created via `webmirror init` (interactive) or manually:
+Created via `site-mirror init` (interactive) or manually:
 
 ```json
 {
