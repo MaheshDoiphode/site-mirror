@@ -1,0 +1,30 @@
+{
+  "name": "webmirror",
+  "version": "1.0.0",
+  "description": "CLI tool to mirror websites for offline browsing using Playwright",
+  "type": "module",
+  "bin": {
+    "webmirror": "./bin/cli.mjs"
+  },
+  "scripts": {
+    "postinstall": "node ./bin/postinstall.mjs"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "README.md"
+  ],
+  "keywords": [
+    "mirror",
+    "offline",
+    "website",
+    "crawler",
+    "playwright",
+    "scraper"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "playwright": "^1.49.1"
+  }
+}
