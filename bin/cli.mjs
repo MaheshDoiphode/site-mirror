@@ -213,45 +213,57 @@ async function cmdRun(cwd, cliArgs) {
   });
 }
 
-async function cmdServe(cwd, port) {
-  // Try to find the output directory:
-  // 1. Check config file for 'out' setting
-  // 2. Check for 'offline' folder (default)
-  // 3. Check if current directory has index.html (serve current dir)
-  const config = await loadConfig(cwd);
-  const configOut = config.out ? path.resolve(cwd, config.out) : null;
-  const defaultOut = path.join(cwd, 'offline');
-  
+async function cmdServe(cwd, explicitDir, port) {
   let outDir = null;
   
-  // Check config's out directory first
-  if (configOut) {
-    const configExists = await fs.access(configOut).then(() => true).catch(() => false);
-    if (configExists) outDir = configOut;
-  }
-  
-  // Check default 'offline' folder
-  if (!outDir) {
-    const defaultExists = await fs.access(defaultOut).then(() => true).catch(() => false);
-    if (defaultExists) outDir = defaultOut;
-  }
-  
-  // Check if current directory has index.html (might be serving from inside output folder)
-  if (!outDir) {
-    const indexExists = await fs.access(path.join(cwd, 'index.html')).then(() => true).catch(() => false);
-    if (indexExists) outDir = cwd;
-  }
+  // If explicit directory provided, use it directly
+  if (explicitDir) {
+    const resolved = path.resolve(cwd, explicitDir);
+    const exists = await fs.access(resolved).then(() => true).catch(() => false);
+    if (exists) {
+      outDir = resolved;
+    } else {
+      console.error(`Directory not found: ${resolved}`);
+      process.exit(1);
+    }
+  } else {
+    // Try to find the output directory:
+    // 1. Check config file for 'out' setting
+    // 2. Check for 'offline' folder (default)
+    // 3. Check if current directory has index.html (serve current dir)
+    const config = await loadConfig(cwd);
+    const configOut = config.out ? path.resolve(cwd, config.out) : null;
+    const defaultOut = path.join(cwd, 'offline');
+    
+    // Check config's out directory first
+    if (configOut) {
+      const configExists = await fs.access(configOut).then(() => true).catch(() => false);
+      if (configExists) outDir = configOut;
+    }
+    
+    // Check default 'offline' folder
+    if (!outDir) {
+      const defaultExists = await fs.access(defaultOut).then(() => true).catch(() => false);
+      if (defaultExists) outDir = defaultOut;
+    }
+    
+    // Check if current directory has index.html (might be serving from inside output folder)
+    if (!outDir) {
+      const indexExists = await fs.access(path.join(cwd, 'index.html')).then(() => true).catch(() => false);
+      if (indexExists) outDir = cwd;
+    }
 
-  if (!outDir) {
-    console.error('No output folder found.');
-    console.error('');
-    console.error('Tried:');
-    if (configOut) console.error(`  - ${configOut} (from config)`);
-    console.error(`  - ${defaultOut} (default)`);
-    console.error(`  - ${cwd} (current directory)`);
-    console.error('');
-    console.error('Run "site-mirror run" first to download the site.');
-    process.exit(1);
+    if (!outDir) {
+      console.error('No output folder found.');
+      console.error('');
+      console.error('Tried:');
+      if (configOut) console.error(`  - ${configOut} (from config)`);
+      console.error(`  - ${defaultOut} (default)`);
+      console.error(`  - ${cwd} (current directory)`);
+      console.error('');
+      console.error('Run "site-mirror run" first to download the site.');
+      process.exit(1);
+    }
   }
 
   console.log(`Serving ${outDir} on http://localhost:${port}/`);
@@ -274,7 +286,7 @@ site-mirror - Mirror websites for offline browsing
 Usage:
   site-mirror init               Interactive setup - creates site-mirror.config.json
   site-mirror run [options]      Mirror the website (reads config + CLI overrides)
-  site-mirror serve [port]       Serve the offline folder (default port: 8080)
+  site-mirror serve [dir] [port] Serve the offline folder (default port: 8080)
 
 Run options:
   --start <url>         Start URL (required if not in config)
@@ -284,11 +296,18 @@ Run options:
   --seedSitemaps true   Seed from sitemap.xml
   --singlePage          Download only this page + all its assets (no crawling)
 
+Serve options:
+  [dir]                 Directory to serve (auto-detects if not provided)
+  [port]                Port number (default: 8080)
+
 Examples:
   site-mirror run --start https://example.com/page --singlePage
   site-mirror init
   site-mirror run
-  site-mirror serve 3000
+  site-mirror serve              # Auto-detect output folder, port 8080
+  site-mirror serve 3000         # Auto-detect output folder, port 3000
+  site-mirror serve ./my-site    # Serve specific folder, port 8080
+  site-mirror serve ./my-site 3000  # Serve specific folder on port 3000
 `);
     return;
   }
@@ -299,8 +318,25 @@ Examples:
     const cliArgs = parseCliArgs(args.slice(1));
     await cmdRun(cwd, cliArgs);
   } else if (command === 'serve') {
-    const port = args[1] || '8080';
-    await cmdServe(cwd, port);
+    // Parse serve arguments: serve [dir] [port]
+    // If arg looks like a number, it's the port; otherwise it's the directory
+    let explicitDir = null;
+    let port = '8080';
+    
+    if (args[1]) {
+      if (/^\d+$/.test(args[1])) {
+        // First arg is a port number
+        port = args[1];
+      } else {
+        // First arg is a directory
+        explicitDir = args[1];
+        if (args[2] && /^\d+$/.test(args[2])) {
+          port = args[2];
+        }
+      }
+    }
+    
+    await cmdServe(cwd, explicitDir, port);
   } else {
     // Assume it's run with options directly (no subcommand)
     const cliArgs = parseCliArgs(args);
