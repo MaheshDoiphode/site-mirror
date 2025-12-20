@@ -214,14 +214,42 @@ async function cmdRun(cwd, cliArgs) {
 }
 
 async function cmdServe(cwd, port) {
-  const outDir = path.join(cwd, 'offline');
-  const exists = await fs
-    .access(outDir)
-    .then(() => true)
-    .catch(() => false);
+  // Try to find the output directory:
+  // 1. Check config file for 'out' setting
+  // 2. Check for 'offline' folder (default)
+  // 3. Check if current directory has index.html (serve current dir)
+  const config = await loadConfig(cwd);
+  const configOut = config.out ? path.resolve(cwd, config.out) : null;
+  const defaultOut = path.join(cwd, 'offline');
+  
+  let outDir = null;
+  
+  // Check config's out directory first
+  if (configOut) {
+    const configExists = await fs.access(configOut).then(() => true).catch(() => false);
+    if (configExists) outDir = configOut;
+  }
+  
+  // Check default 'offline' folder
+  if (!outDir) {
+    const defaultExists = await fs.access(defaultOut).then(() => true).catch(() => false);
+    if (defaultExists) outDir = defaultOut;
+  }
+  
+  // Check if current directory has index.html (might be serving from inside output folder)
+  if (!outDir) {
+    const indexExists = await fs.access(path.join(cwd, 'index.html')).then(() => true).catch(() => false);
+    if (indexExists) outDir = cwd;
+  }
 
-  if (!exists) {
-    console.error(`No offline folder found at ${outDir}`);
+  if (!outDir) {
+    console.error('No output folder found.');
+    console.error('');
+    console.error('Tried:');
+    if (configOut) console.error(`  - ${configOut} (from config)`);
+    console.error(`  - ${defaultOut} (default)`);
+    console.error(`  - ${cwd} (current directory)`);
+    console.error('');
     console.error('Run "site-mirror run" first to download the site.');
     process.exit(1);
   }
