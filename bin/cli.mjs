@@ -5,11 +5,12 @@
  * Usage:
  *   site-mirror init                  Interactive setup - creates site-mirror.config.json
  *   site-mirror run [options]         Run the mirror (reads config + CLI overrides)
- *   site-mirror serve [port]          Serve the offline folder locally
+ *   site-mirror serve [dir] [port]    Serve the output folder locally (HTML, React, or Next.js)
  *
  * Options (for run):
  *   --start <url>         Start URL (required if not in config)
  *   --out <dir>           Output directory (default: ./offline)
+ *   --format <type>       Output format: html | react | nextjs (default: html)
  *   --maxPages <n>        Max pages to crawl (0 = unlimited)
  *   --maxDepth <n>        Max link depth (0 = unlimited)
  *   --sameOriginOnly      Only crawl same-origin pages (default: true)
@@ -21,14 +22,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { execSync, spawn } from 'node:child_process';
+import { execSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_FILE = 'site-mirror.config.json';
+const VALID_FORMATS = new Set(['html', 'react', 'nextjs', 'next']);
 
 const defaultConfig = {
   start: '',
   out: './offline',
+  format: 'html',
   maxPages: 0,
   maxDepth: 0,
   sameOriginOnly: true,
@@ -37,6 +40,13 @@ const defaultConfig = {
   userAgent:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
 };
+
+function normalizeFormat(fmt) {
+  const lower = String(fmt || 'html').toLowerCase().trim();
+  if (lower === 'next') return 'nextjs';
+  if (VALID_FORMATS.has(lower)) return lower;
+  return null;
+}
 
 async function loadConfig(cwd) {
   const configPath = path.join(cwd, CONFIG_FILE);
@@ -60,6 +70,15 @@ function parseCliArgs(argv) {
     } else if (key === '--out') {
       args.out = next;
       i++;
+    } else if (key === '--format' || key === '-f') {
+      args.format = next;
+      i++;
+    } else if (key === '--react') {
+      args.format = 'react';
+    } else if (key === '--nextjs' || key === '--next') {
+      args.format = 'nextjs';
+    } else if (key === '--html') {
+      args.format = 'html';
     } else if (key === '--maxPages') {
       args.maxPages = Number(next);
       i++;
@@ -106,7 +125,7 @@ async function cmdInit(cwd) {
   }
 
   console.log('');
-  console.log('Welcome to site-mirror! Let\'s set up your config.');
+  console.log("Welcome to site-mirror! Let's set up your config.");
   console.log('Press Enter to accept the default value shown in parentheses.');
   console.log('');
 
@@ -118,6 +137,8 @@ async function cmdInit(cwd) {
   try {
     const start = await prompt(rl, 'Website URL to mirror', 'https://example.com/');
     const out = await prompt(rl, 'Output directory', './offline');
+    const rawFormat = await prompt(rl, 'Export format (html / react / nextjs)', 'html');
+    const format = normalizeFormat(rawFormat) || 'html';
     const singlePageStr = await prompt(rl, 'Single page only? (yes/no)', 'no');
     const singlePage = singlePageStr === 'yes' || singlePageStr === 'y' || singlePageStr === 'true';
 
@@ -139,6 +160,7 @@ async function cmdInit(cwd) {
     const config = {
       start,
       out,
+      format,
       singlePage,
       maxPages,
       maxDepth,
@@ -160,6 +182,13 @@ async function cmdRun(cwd, cliArgs) {
   const config = await loadConfig(cwd);
   const merged = { ...config, ...cliArgs };
 
+  const format = normalizeFormat(merged.format);
+  if (!format) {
+    console.error(`Error: Invalid format "${merged.format}". Supported formats: html, react, nextjs`);
+    process.exit(1);
+  }
+  merged.format = format;
+
   // Validate required fields
   if (!merged.start) {
     console.error('');
@@ -168,8 +197,9 @@ async function cmdRun(cwd, cliArgs) {
     console.error('You can either:');
     console.error('  1. Run "site-mirror init" to create a config file');
     console.error('  2. Pass --start <url> directly, e.g.:');
-    console.error('     site-mirror run --start https://example.com/');
-    console.error('     site-mirror run --start https://example.com/page --singlePage');
+    console.error('     site-mirror run --start https://example.com/ --format html');
+    console.error('     site-mirror run --start https://example.com/page --singlePage --format react');
+    console.error('     site-mirror run --start https://example.com/ --format nextjs');
     console.error('');
     process.exit(1);
   }
@@ -189,6 +219,7 @@ async function cmdRun(cwd, cliArgs) {
   console.log('Configuration:');
   console.log(`  start:          ${merged.start}`);
   console.log(`  out:            ${merged.out}`);
+  console.log(`  format:         ${merged.format.toUpperCase()}`);
   if (merged.singlePage) {
     console.log(`  mode:           SINGLE PAGE (no crawling)`);
   } else {
@@ -204,6 +235,7 @@ async function cmdRun(cwd, cliArgs) {
   await mirrorSite({
     start: merged.start,
     out: path.resolve(cwd, merged.out),
+    format: merged.format,
     maxPages: merged.singlePage ? 1 : merged.maxPages,
     maxDepth: merged.singlePage ? 0 : merged.maxDepth,
     sameOriginOnly: merged.sameOriginOnly,
@@ -215,8 +247,7 @@ async function cmdRun(cwd, cliArgs) {
 
 async function cmdServe(cwd, explicitDir, port) {
   let outDir = null;
-  
-  // If explicit directory provided, use it directly
+
   if (explicitDir) {
     const resolved = path.resolve(cwd, explicitDir);
     const exists = await fs.access(resolved).then(() => true).catch(() => false);
@@ -227,27 +258,20 @@ async function cmdServe(cwd, explicitDir, port) {
       process.exit(1);
     }
   } else {
-    // Try to find the output directory:
-    // 1. Check config file for 'out' setting
-    // 2. Check for 'offline' folder (default)
-    // 3. Check if current directory has index.html (serve current dir)
     const config = await loadConfig(cwd);
     const configOut = config.out ? path.resolve(cwd, config.out) : null;
     const defaultOut = path.join(cwd, 'offline');
-    
-    // Check config's out directory first
+
     if (configOut) {
       const configExists = await fs.access(configOut).then(() => true).catch(() => false);
       if (configExists) outDir = configOut;
     }
-    
-    // Check default 'offline' folder
+
     if (!outDir) {
       const defaultExists = await fs.access(defaultOut).then(() => true).catch(() => false);
       if (defaultExists) outDir = defaultOut;
     }
-    
-    // Check if current directory has index.html (might be serving from inside output folder)
+
     if (!outDir) {
       const indexExists = await fs.access(path.join(cwd, 'index.html')).then(() => true).catch(() => false);
       if (indexExists) outDir = cwd;
@@ -266,6 +290,26 @@ async function cmdServe(cwd, explicitDir, port) {
     }
   }
 
+  // Detect if outDir is a React (Vite) or Next.js project with a package.json
+  const pkgJsonPath = path.join(outDir, 'package.json');
+  const hasPkgJson = await fs.access(pkgJsonPath).then(() => true).catch(() => false);
+
+  if (hasPkgJson) {
+    const nodeModulesPath = path.join(outDir, 'node_modules');
+    const hasNodeModules = await fs.access(nodeModulesPath).then(() => true).catch(() => false);
+    if (!hasNodeModules) {
+      console.log(`Installing dependencies in ${outDir}...`);
+      execSync('npm install', { cwd: outDir, stdio: 'inherit' });
+    }
+    console.log(`Starting development server in ${outDir} on port ${port}...`);
+    try {
+      execSync(`npm run dev -- --port ${port}`, { cwd: outDir, stdio: 'inherit' });
+    } catch {
+      // User closed with Ctrl+C
+    }
+    return;
+  }
+
   console.log(`Serving ${outDir} on http://localhost:${port}/`);
   try {
     execSync(`npx http-server "${outDir}" -p ${port} -c-1`, { stdio: 'inherit' });
@@ -281,33 +325,34 @@ async function main() {
 
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     console.log(`
-site-mirror - Mirror websites for offline browsing
+site-mirror - Mirror websites into clean HTML/CSS/JS, React (Vite), or Next.js projects
 
 Usage:
   site-mirror init               Interactive setup - creates site-mirror.config.json
   site-mirror run [options]      Mirror the website (reads config + CLI overrides)
-  site-mirror serve [dir] [port] Serve the offline folder (default port: 8080)
+  site-mirror serve [dir] [port] Serve the output folder (default port: 8080)
 
 Run options:
   --start <url>         Start URL (required if not in config)
   --out <dir>           Output directory (default: ./offline)
+  --format <type>       Output format: html | react | nextjs (default: html)
+  --react               Shorthand for --format react
+  --nextjs              Shorthand for --format nextjs
+  --html                Shorthand for --format html
   --maxPages <n>        Max pages (0 = unlimited)
   --maxDepth <n>        Max depth (0 = unlimited)
   --seedSitemaps true   Seed from sitemap.xml
   --singlePage          Download only this page + all its assets (no crawling)
 
 Serve options:
-  [dir]                 Directory to serve (auto-detects if not provided)
+  [dir]                 Directory to serve (auto-detects HTML, React, or Next.js)
   [port]                Port number (default: 8080)
 
 Examples:
-  site-mirror run --start https://example.com/page --singlePage
-  site-mirror init
-  site-mirror run
-  site-mirror serve              # Auto-detect output folder, port 8080
-  site-mirror serve 3000         # Auto-detect output folder, port 3000
-  site-mirror serve ./my-site    # Serve specific folder, port 8080
-  site-mirror serve ./my-site 3000  # Serve specific folder on port 3000
+  site-mirror run --start https://www.anthropic.com/research --singlePage --format html
+  site-mirror run --start https://www.anthropic.com/research --singlePage --format react
+  site-mirror run --start https://www.anthropic.com/research --singlePage --format nextjs
+  site-mirror serve ./anthropic-research 3000
 `);
     return;
   }
