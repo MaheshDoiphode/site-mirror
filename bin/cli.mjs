@@ -30,6 +30,7 @@ const VALID_FORMATS = new Set(['html', 'react', 'nextjs', 'next']);
 
 const defaultConfig = {
   start: '',
+  urls: [],
   out: './offline',
   format: 'html',
   maxPages: 0,
@@ -37,9 +38,27 @@ const defaultConfig = {
   sameOriginOnly: true,
   seedSitemaps: false,
   singlePage: false,
+  login: false,
+  auth: '',
+  cookies: '',
+  waitFor: 0,
+  waitForSelector: '',
   userAgent:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36',
 };
+
+function parseUrlsString(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.flatMap((item) => parseUrlsString(item));
+  }
+  // Normalize MSYS2 / Git Bash Windows path conversion (e.g. `C:/Program Files/Git/home` -> `/home`)
+  const cleaned = String(raw).replace(/[A-Za-z]:\/Program Files\/Git(?=\/)/gi, '');
+  return cleaned
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
 
 function normalizeFormat(fmt) {
   const lower = String(fmt || 'html').toLowerCase().trim();
@@ -67,7 +86,13 @@ function parseCliArgs(argv) {
     if (key === '--start') {
       args.start = next;
       i++;
-    } else if (key === '--out') {
+    } else if (key === '--urls' || key === '--url-list') {
+      const collected = [];
+      while (i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
+        collected.push(argv[++i]);
+      }
+      args.urls = [...(args.urls || []), ...parseUrlsString(collected)];
+    } else if (key === '--out' || key === '-o') {
       args.out = next;
       i++;
     } else if (key === '--format' || key === '-f') {
@@ -93,9 +118,41 @@ function parseCliArgs(argv) {
       i++;
     } else if (key === '--singlePage') {
       args.singlePage = true;
+    } else if (key === '--login' || key === '--interactive-login') {
+      args.login = true;
+      if (next && !next.startsWith('-')) {
+        if (/^https?:\/\//i.test(next)) {
+          if (!args.start) args.start = next;
+          i++;
+        } else if (next.endsWith('.json')) {
+          args.auth = next;
+          i++;
+        } else if (next === 'true' || next === 'false') {
+          args.login = next === 'true';
+          i++;
+        }
+      }
+    } else if (key === '--auth' || key === '--save') {
+      if (next && !next.startsWith('-')) {
+        args.auth = next;
+        i++;
+      } else {
+        args.auth = 'auth.json';
+      }
+    } else if (key === '--cookies' || key === '--cookie') {
+      args.cookies = next;
+      i++;
+    } else if (key === '--waitFor' || key === '--wait') {
+      args.waitFor = Number(next) || 0;
+      i++;
+    } else if (key === '--waitForSelector' || key === '--selector') {
+      args.waitForSelector = next;
+      i++;
     } else if (key === '--userAgent') {
       args.userAgent = next;
       i++;
+    } else if (!key.startsWith('-') && /^https?:\/\//i.test(key) && !args.start) {
+      args.start = key;
     }
   }
   return args;
@@ -189,16 +246,21 @@ async function cmdRun(cwd, cliArgs) {
   }
   merged.format = format;
 
+  const explicitUrls = parseUrlsString(merged.urls);
+  if (explicitUrls.length > 0 && !merged.start) {
+    merged.start = explicitUrls[0];
+  }
+
   // Validate required fields
-  if (!merged.start) {
+  if (!merged.start && explicitUrls.length === 0) {
     console.error('');
-    console.error('Error: No start URL specified.');
+    console.error('Error: No start URL or --urls list specified.');
     console.error('');
     console.error('You can either:');
     console.error('  1. Run "site-mirror init" to create a config file');
-    console.error('  2. Pass --start <url> directly, e.g.:');
+    console.error('  2. Pass --start <url> or --urls "<url1>,<url2>", e.g.:');
     console.error('     site-mirror run --start https://example.com/ --format html');
-    console.error('     site-mirror run --start https://example.com/page --singlePage --format react');
+    console.error('     site-mirror run --urls "https://example.com/home,https://example.com/agents" --format react');
     console.error('     site-mirror run --start https://example.com/ --format nextjs');
     console.error('');
     process.exit(1);
@@ -217,10 +279,16 @@ async function cmdRun(cwd, cliArgs) {
 
   console.log('');
   console.log('Configuration:');
-  console.log(`  start:          ${merged.start}`);
+  if (explicitUrls.length > 0) {
+    console.log(`  urls:           ${explicitUrls.length} specific pages (${explicitUrls[0]}${explicitUrls.length > 1 ? ` + ${explicitUrls.length - 1} more` : ''})`);
+  } else {
+    console.log(`  start:          ${merged.start}`);
+  }
   console.log(`  out:            ${merged.out}`);
   console.log(`  format:         ${merged.format.toUpperCase()}`);
-  if (merged.singlePage) {
+  if (explicitUrls.length > 0) {
+    console.log(`  mode:           MULTI-PAGE CHERRY-PICK (${explicitUrls.length} URLs into 1 unified app)`);
+  } else if (merged.singlePage) {
     console.log(`  mode:           SINGLE PAGE (no crawling)`);
   } else {
     console.log(`  maxPages:       ${merged.maxPages || 'unlimited'}`);
@@ -228,21 +296,76 @@ async function cmdRun(cwd, cliArgs) {
     console.log(`  seedSitemaps:   ${merged.seedSitemaps}`);
   }
   console.log(`  sameOriginOnly: ${merged.sameOriginOnly}`);
+  if (merged.login) {
+    console.log(`  login:          INTERACTIVE BROWSER LOGIN`);
+  }
+  if (merged.auth) {
+    console.log(`  auth:           ${merged.auth}`);
+  }
+  if (merged.cookies) {
+    console.log(`  cookies:        ${merged.cookies}`);
+  }
+  if (merged.waitFor) {
+    console.log(`  waitFor:        ${merged.waitFor}ms`);
+  }
+  if (merged.waitForSelector) {
+    console.log(`  waitForSelector:${merged.waitForSelector}`);
+  }
   console.log('');
 
   // Dynamically import the mirror lib
   const { mirrorSite } = await import('../lib/mirror.mjs');
   await mirrorSite({
     start: merged.start,
+    urls: explicitUrls,
     out: path.resolve(cwd, merged.out),
     format: merged.format,
-    maxPages: merged.singlePage ? 1 : merged.maxPages,
-    maxDepth: merged.singlePage ? 0 : merged.maxDepth,
+    maxPages: explicitUrls.length > 0 ? explicitUrls.length : merged.singlePage ? 1 : merged.maxPages,
+    maxDepth: explicitUrls.length > 0 || merged.singlePage ? 0 : merged.maxDepth,
     sameOriginOnly: merged.sameOriginOnly,
-    seedSitemaps: merged.singlePage ? false : merged.seedSitemaps,
+    seedSitemaps: explicitUrls.length > 0 || merged.singlePage ? false : merged.seedSitemaps,
     singlePage: merged.singlePage,
     userAgent: merged.userAgent,
+    login: Boolean(merged.login),
+    authFile: merged.auth ? path.resolve(cwd, merged.auth) : '',
+    cookies: merged.cookies || '',
+    waitFor: Number(merged.waitFor) || 0,
+    waitForSelector: merged.waitForSelector || '',
   });
+}
+
+async function cmdLogin(cwd, cliArgs) {
+  const config = await loadConfig(cwd);
+  const merged = { ...config, ...cliArgs };
+
+  if (!merged.start) {
+    console.error('');
+    console.error('Error: No login URL specified.');
+    console.error('Usage: site-mirror login --start https://app.example.com/login --auth auth.json');
+    console.error('');
+    process.exit(1);
+  }
+
+  try {
+    new URL(merged.start);
+  } catch {
+    console.error(`Error: Invalid URL "${merged.start}"`);
+    process.exit(1);
+  }
+
+  const saveAuthPath = path.resolve(cwd, merged.auth || 'auth.json');
+  const { runInteractiveLogin } = await import('../lib/mirror.mjs');
+  await runInteractiveLogin({
+    url: merged.start,
+    saveAuthPath,
+    cookiesInput: merged.cookies || '',
+    userAgent: merged.userAgent,
+  });
+
+  console.log('');
+  console.log('You can now mirror authenticated pages using:');
+  console.log(`  site-mirror run --start "${merged.start}" --auth "${merged.auth || 'auth.json'}" --format react`);
+  console.log('');
 }
 
 async function cmdServe(cwd, explicitDir, port) {
@@ -329,20 +452,27 @@ site-mirror - Mirror websites into clean HTML/CSS/JS, React (Vite), or Next.js p
 
 Usage:
   site-mirror init               Interactive setup - creates site-mirror.config.json
+  site-mirror login [options]    Open browser to sign in and save session (auth.json)
   site-mirror run [options]      Mirror the website (reads config + CLI overrides)
   site-mirror serve [dir] [port] Serve the output folder (default port: 8080)
 
 Run options:
-  --start <url>         Start URL (required if not in config)
-  --out <dir>           Output directory (default: ./offline)
-  --format <type>       Output format: html | react | nextjs (default: html)
-  --react               Shorthand for --format react
-  --nextjs              Shorthand for --format nextjs
-  --html                Shorthand for --format html
-  --maxPages <n>        Max pages (0 = unlimited)
-  --maxDepth <n>        Max depth (0 = unlimited)
-  --seedSitemaps true   Seed from sitemap.xml
-  --singlePage          Download only this page + all its assets (no crawling)
+  --start <url>             Start URL (required if --urls not used and not in config)
+  --urls "<u1> <u2> ..."    Cherry-pick specific URLs into one unified app (space/comma separated)
+  --out <dir>               Output directory (default: ./offline)
+  --format <type>           Output format: html | react | nextjs (default: html)
+  --react                   Shorthand for --format react
+  --nextjs                  Shorthand for --format nextjs
+  --html                    Shorthand for --format html
+  --login                   Open browser window to sign in interactively before mirroring
+  --auth <file>             Load/save authenticated session file (e.g. auth.json)
+  --cookies <val|file>      Pass cookies (file path or "name=value; name2=value2")
+  --waitFor <ms>            Extra wait time (ms) per page for slow async API/chart data
+  --waitForSelector <css>   Wait for a specific CSS selector to appear before capturing
+  --maxPages <n>            Max pages (0 = unlimited)
+  --maxDepth <n>            Max depth (0 = unlimited)
+  --seedSitemaps true       Seed from sitemap.xml
+  --singlePage              Download only this page + all its assets (no crawling)
 
 Serve options:
   [dir]                 Directory to serve (auto-detects HTML, React, or Next.js)
@@ -350,8 +480,10 @@ Serve options:
 
 Examples:
   site-mirror run --start https://www.anthropic.com/research --singlePage --format html
-  site-mirror run --start https://www.anthropic.com/research --singlePage --format react
-  site-mirror run --start https://www.anthropic.com/research --singlePage --format nextjs
+  site-mirror run --urls "https://platform.openai.com/home https://platform.openai.com/agents https://platform.openai.com/usage?startDate=2026-01-01&endDate=2026-01-31" --login --format react
+  site-mirror login --start https://app.example.com/login --auth auth.json
+  site-mirror run --start https://app.example.com/dashboard --auth auth.json --format nextjs
+  site-mirror run --start https://app.example.com/dashboard --cookies "session_id=xyz123" --format react
   site-mirror serve ./anthropic-research 3000
 `);
     return;
@@ -359,6 +491,9 @@ Examples:
 
   if (command === 'init') {
     await cmdInit(cwd);
+  } else if (command === 'login' || command === 'auth') {
+    const cliArgs = parseCliArgs(args.slice(1));
+    await cmdLogin(cwd, cliArgs);
   } else if (command === 'run') {
     const cliArgs = parseCliArgs(args.slice(1));
     await cmdRun(cwd, cliArgs);
